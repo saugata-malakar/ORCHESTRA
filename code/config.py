@@ -30,6 +30,11 @@ MODEL_ANTHROPIC: str = "claude-sonnet-4-20250514"
 MAX_TOKENS: int = 1500
 TEMPERATURE: float = 0.0
 
+# -- Auth / Session --
+FLASK_SECRET_KEY: str = os.environ.get("FLASK_SECRET_KEY", "super-secret-default-key-for-orchestra")
+GOOGLE_CLIENT_ID: str = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET: str = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+
 # -- Paths --
 CODE_DIR    = Path(__file__).resolve().parent
 ROOT_DIR    = CODE_DIR.parent
