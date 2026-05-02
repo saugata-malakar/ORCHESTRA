@@ -119,7 +119,7 @@ PAGE_LANDING = r'''<!DOCTYPE html>
       <p>Commercial Triage Engine</p>
     </div>
   </a>
-  <a href="/login" class="btn-glass">''' + GOOGLE_SVG + r''' Sign In</a>
+  <a href="/login" class="btn-glass">Sign In</a>
 </header>
 
 <div class="container">
@@ -127,7 +127,7 @@ PAGE_LANDING = r'''<!DOCTYPE html>
     <div class="hero-badge">Orchestrate Hackathon 2026</div>
     <h1>The Ultimate Multi-Domain<br><span class="gradient-text">Support Triage Agent</span></h1>
     <p>Seamlessly process, categorize, and resolve support tickets across HackerRank, Claude, and Visa with our proprietary Min-Max design architecture. Built to scale infinitely across devices on Vercel Edge Networks.</p>
-    <a href="/login" class="btn-primary">''' + GOOGLE_SVG + r''' Continue with Google</a>
+    <a href="/login" class="btn-primary">Access Triage Engine</a>
   </div>
 
   <div class="bento-grid">
@@ -161,6 +161,70 @@ PAGE_LANDING = r'''<!DOCTYPE html>
     });
   });
 </script>
+</body>
+</html>'''
+
+PAGE_AUTH = r'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sign In | Orchestra</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/globals.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+</head>
+<body>
+<div class="auth-layout">
+  <div class="auth-brand">
+    <div class="auth-brand-content">
+      <a href="/" class="logo" style="margin-bottom: auto;">
+        <div class="logo-icon">ST</div>
+        <div class="logo-text">
+          <h1>Orchestra</h1>
+          <p>Enterprise Triage</p>
+        </div>
+      </a>
+      <div style="margin-top:auto;">
+        <h1>Secure.<br>Deterministic.<br>Limitless.</h1>
+        <p>Access the proprietary Min-Max triage dashboard designed for handling high-volume tickets across global domains.</p>
+      </div>
+    </div>
+  </div>
+  <div class="auth-panel">
+    <div class="auth-box">
+      <div class="auth-title">Sign In to Orchestra</div>
+      <div class="auth-subtitle">Welcome back! Please enter your details.</div>
+      
+      <form action="/login_submit" method="POST">
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" name="email" class="form-input" placeholder="Enter your email" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" name="password" class="form-input" placeholder="••••••••" required>
+        </div>
+        <div class="form-options">
+          <label class="checkbox-wrap">
+            <input type="checkbox" checked> Remember me
+          </label>
+          <a href="#" class="forgot-link">Forgot password?</a>
+        </div>
+        <button type="submit" class="btn-submit">Sign In</button>
+      </form>
+      
+      <div class="divider">or continue with</div>
+      
+      <a href="/google_login" class="btn-oauth">
+        ''' + GOOGLE_SVG + r'''
+        Google
+      </a>
+      
+      <div class="auth-switch">
+        Don't have an account? <a href="#">Sign Up</a>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>'''
 
@@ -313,7 +377,18 @@ def index():
     return render_template_string(PAGE_LANDING)
 
 @app.route('/login')
-def login():
+def login_page():
+    return render_template_string(PAGE_AUTH)
+
+@app.route('/login_submit', methods=['POST'])
+def login_submit():
+    email = flask_request.form.get('email', 'admin@orchestra.com')
+    # Standard dummy login for hackathon completeness
+    session['user'] = {'name': email.split('@')[0].capitalize(), 'email': email}
+    return redirect('/dashboard')
+
+@app.route('/google_login')
+def google_login():
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         session['user'] = {'name': 'Hackathon Judge', 'email': 'judge@orchestra.com'}
         return redirect('/dashboard')
