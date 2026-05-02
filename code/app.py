@@ -10,7 +10,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 random.seed(42)
 
 from flask import Flask, render_template_string, jsonify, request as flask_request
-from config import ANTHROPIC_API_KEY, INPUT_CSV, OUTPUT_CSV, TICKETS_DIR
+from config import ANTHROPIC_API_KEY, GEMINI_API_KEY, LLM_PROVIDER, INPUT_CSV, OUTPUT_CSV, TICKETS_DIR
 from corpus_loader import load_corpus
 from retriever import BM25Retriever
 from agent import SupportTriageAgent
@@ -33,11 +33,12 @@ def init_agent():
     state["log"].append(f"[INIT] {len(docs)} chunks indexed")
     state["retriever"] = BM25Retriever(docs)
     state["log"].append("[INIT] BM25 index ready")
-    if ANTHROPIC_API_KEY:
+    
+    if LLM_PROVIDER != "none":
         state["agent"] = SupportTriageAgent(state["retriever"])
-        state["log"].append("[INIT] Agent ready (API key loaded)")
+        state["log"].append(f"[INIT] Agent ready (Provider: {LLM_PROVIDER})")
     else:
-        state["log"].append("[WARN] No ANTHROPIC_API_KEY!")
+        state["log"].append("[WARN] No API key (Gemini or Anthropic) set!")
     state["corpus_loaded"] = True
 
 def load_csv(path):
@@ -387,13 +388,13 @@ def api_status():
         "corpus_loaded":state["corpus_loaded"],"corpus_chunks":state["corpus_chunks"],
         "processing":state["processing"],"progress":state["progress"],
         "total":state["total"],"results":state["results"],
-        "log":state["log"][-80:],"has_key":bool(ANTHROPIC_API_KEY),"error":state["error"],
+        "log":state["log"][-80:],"has_key":(LLM_PROVIDER != "none"),"error":state["error"],
     })
 
 @app.route('/api/run', methods=['POST'])
 def api_run():
     if state["processing"]: return jsonify({"error":"Already processing"}),409
-    if not state["agent"]: return jsonify({"error":"No API key. Set ANTHROPIC_API_KEY and restart."}),400
+    if not state["agent"]: return jsonify({"error":"No API key set. Please configure GEMINI_API_KEY and restart."}),400
     mode = flask_request.args.get('mode','full')
     path = str(Path(TICKETS_DIR)/"sample_support_tickets.csv") if mode=='sample' else str(INPUT_CSV)
     if not os.path.exists(path): return jsonify({"error":f"Not found: {path}"}),404
