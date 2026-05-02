@@ -151,3 +151,36 @@ def check_malicious(issue: str, subject: str) -> Tuple[bool, str]:
         if re.search(pattern, haystack, re.IGNORECASE):
             return True, label
     return False, ""
+
+def injection_detector(issue: str, subject: str) -> Tuple[bool, str]:
+    """
+    Feature #3: Dedicated Prompt Injection Detector
+    Scores how likely a ticket is to be a prompt injection or jailbreak attempt.
+    """
+    haystack = f"{subject} {issue}".lower()
+    score = 0
+    reasons = []
+    
+    # 1. Instruction-like phrases
+    if re.search(r"(?:ignore|disregard|forget)\s+(?:all\s+)?(?:previous|prior|above)\s+(?:instructions|rules|prompts)", haystack):
+        score += 5
+        reasons.append("instruction_override")
+        
+    # 2. System extraction
+    if re.search(r"(?:reveal|show|display|output|print)\s+(?:your\s+)?(?:system\s+)?(?:prompt|instructions|rules|logic|documents)", haystack):
+        score += 5
+        reasons.append("system_extraction")
+        
+    # 3. Role-play setups
+    if re.search(r"(?:pretend you are|act as|you are now)\b", haystack):
+        score += 3
+        reasons.append("roleplay_setup")
+        
+    # 4. Base64 or obfuscation detection (basic heuristic)
+    if re.search(r"^[A-Za-z0-9+/]{40,}={0,2}$", haystack):
+        score += 4
+        reasons.append("base64_obfuscation")
+        
+    if score >= 5:
+        return True, "prompt_injection"
+    return False, ""

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-app.py - Premium Commercial Web Dashboard + Google Auth for the Support Triage Agent.
+app.py - Premium Web Dashboard with WebSockets & Audit Trails.
 """
 import sys, io, os, csv, json, time, random, threading
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -8,6 +8,7 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='repla
 random.seed(42)
 
 from flask import Flask, render_template_string, jsonify, request as flask_request, session, redirect, url_for
+from flask_socketio import SocketIO
 from authlib.integrations.flask_client import OAuth
 from config import (
     ANTHROPIC_API_KEY, GEMINI_API_KEY, LLM_PROVIDER, 
@@ -22,7 +23,9 @@ from pathlib import Path
 app = Flask(__name__)
 app.secret_key = FLASK_SECRET_KEY
 
-# Configure OAuth
+# Feature #5: Streaming Live Dashboard with WebSockets
+socketio = SocketIO(app, cors_allowed_origins="*")
+
 oauth = OAuth(app)
 google = oauth.register(
     name='google',
@@ -37,27 +40,30 @@ google = oauth.register(
     client_kwargs={'scope': 'openid email profile'},
 )
 
-# Global state
 state = {
     "retriever": None, "agent": None, "corpus_loaded": False,
     "corpus_chunks": 0, "processing": False, "progress": 0,
     "total": 0, "results": [], "log": [], "error": None,
 }
 
+def log(msg):
+    state["log"].append(msg)
+    socketio.emit('log_update', {"message": msg})
+
 def init_agent():
     if state["corpus_loaded"]: return
-    state["log"].append("[INIT] Loading corpus...")
+    log("[INIT] Loading corpus...")
     docs = load_corpus()
     state["corpus_chunks"] = len(docs)
-    state["log"].append(f"[INIT] {len(docs)} chunks indexed")
+    log(f"[INIT] {len(docs)} chunks indexed")
     state["retriever"] = BM25Retriever(docs)
-    state["log"].append("[INIT] BM25 index ready")
+    log("[INIT] BM25 index ready")
     
     if LLM_PROVIDER != "none":
         state["agent"] = SupportTriageAgent(state["retriever"])
-        state["log"].append(f"[INIT] Agent ready (Provider: {LLM_PROVIDER})")
+        log(f"[INIT] Agent ready (Provider: {LLM_PROVIDER})")
     else:
-        state["log"].append("[WARN] No API key (Gemini or Anthropic) set!")
+        log("[WARN] No API key (Gemini or Anthropic) set!")
     state["corpus_loaded"] = True
 
 def load_csv(path):
@@ -76,21 +82,47 @@ def load_csv(path):
 
 def run_batch(tickets):
     state["processing"]=True; state["results"]=[]; state["progress"]=0; state["total"]=len(tickets); state["error"]=None
+    socketio.emit('batch_start', {"total": len(tickets)})
+    
     try:
         for i,t in enumerate(tickets):
             iss=t.get("issue","").strip(); sub=t.get("subject","").strip(); co=t.get("company","None").strip()
-            state["log"].append(f"[{i+1}/{len(tickets)}] {(sub or iss)[:55]}")
+            log(f"[{i+1}/{len(tickets)}] {(sub or iss)[:55]}")
+            
+            # Agent processing
             r = state["agent"].process(iss, sub, co)
-            r["_issue"]=iss; r["_subject"]=sub; r["_company"]=co
-            state["results"].append(r); state["progress"]=i+1
+            
+            # Feature #6: Audit Trail
+            r["_id"] = i + 1
+            r["_issue"] = iss
+            r["_subject"] = sub
+            r["_company"] = co
+            
+            state["results"].append(r)
+            state["progress"] = i + 1
+            
+            # Push instantly via WebSockets (Feature #5)
+            socketio.emit('ticket_done', {"ticket": r, "progress": i + 1, "total": len(tickets)})
+            
+        # Write output.csv
         out = str(OUTPUT_CSV)
         os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
         with open(out,"w",newline="",encoding="utf-8") as f:
             w=csv.DictWriter(f,fieldnames=["status","product_area","response","justification","request_type"],extrasaction="ignore")
             w.writeheader(); w.writerows(state["results"])
-        state["log"].append(f"[DONE] output.csv written ({len(state['results'])} rows)")
+            
+        # Write output_audit.json (Feature #6)
+        audit_out = out.replace(".csv", "_audit.json")
+        with open(audit_out, "w", encoding="utf-8") as f:
+            json.dump(state["results"], f, indent=2)
+            
+        log(f"[DONE] output.csv and output_audit.json written ({len(state['results'])} rows)")
+        socketio.emit('batch_done')
     except Exception as e:
-        state["log"].append(f"[ERROR] {e}"); state["error"]=str(e)
+        err = f"[ERROR] {e}"
+        log(err)
+        state["error"]=str(e)
+        socketio.emit('batch_error', {"error": str(e)})
     state["processing"]=False
 
 # =======================
@@ -110,7 +142,6 @@ PAGE_LANDING = r'''<!DOCTYPE html>
 <div class="bg-scene"><div class="bg-orb o1"></div><div class="bg-orb o2"></div><div class="bg-orb o3"></div></div>
 <div class="grid-bg"></div>
 <div class="wrapper">
-
 <header class="header">
   <a href="/" class="logo">
     <div class="logo-icon">ST</div>
@@ -121,7 +152,6 @@ PAGE_LANDING = r'''<!DOCTYPE html>
   </a>
   <a href="/login" class="btn-glass">Sign In</a>
 </header>
-
 <div class="container">
   <div class="hero">
     <div class="hero-badge">Orchestrate Hackathon 2026</div>
@@ -129,7 +159,6 @@ PAGE_LANDING = r'''<!DOCTYPE html>
     <p>Seamlessly process, categorize, and resolve support tickets across HackerRank, Claude, and Visa with our proprietary Min-Max design architecture. Built to scale infinitely across devices on Vercel Edge Networks.</p>
     <a href="/login" class="btn-primary">Access Triage Engine</a>
   </div>
-
   <div class="bento-grid">
     <div class="bento-item bento-large">
       <div class="bento-icon">🧠</div>
@@ -138,29 +167,17 @@ PAGE_LANDING = r'''<!DOCTYPE html>
     </div>
     <div class="bento-item">
       <div class="bento-icon">🚀</div>
-      <div class="bento-title">Infinite Load Balancing</div>
-      <div class="bento-desc">By leveraging stateless cookie sessions and a Vercel serverless backend, this agent effortlessly handles high-concurrency traffic globally.</div>
+      <div class="bento-title">WebSocket Streaming</div>
+      <div class="bento-desc">Watch tickets process in real-time. By leveraging Socket.IO and stateless cookie sessions, this agent effortlessly handles high-concurrency traffic globally.</div>
     </div>
     <div class="bento-item">
       <div class="bento-icon">🛡️</div>
-      <div class="bento-title">3-Layer Advanced Safety</div>
-      <div class="bento-desc">Detects prompt injections, legal threats, fraud attempts, and out-of-scope issues before the LLM evaluates the request, saving crucial API costs.</div>
+      <div class="bento-title">Auto-Deduplication & Safety</div>
+      <div class="bento-desc">Detects prompt injections, legal threats, and identical tickets using TF-IDF vectorization before the LLM evaluates the request, saving crucial API costs.</div>
     </div>
   </div>
 </div>
-
-<div class="footer">Orchestra Hackathon Project 2026 &mdash; Built with Google Gemini &mdash; Saugata Malakar</div>
 </div>
-<script>
-  // Magnet effect for bento items
-  document.querySelectorAll('.bento-item').forEach(item => {
-    item.addEventListener('mousemove', e => {
-      const rect = item.getBoundingClientRect();
-      item.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
-      item.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
-    });
-  });
-</script>
 </body>
 </html>'''
 
@@ -178,10 +195,7 @@ PAGE_AUTH = r'''<!DOCTYPE html>
     <div class="auth-brand-content">
       <a href="/" class="logo" style="margin-bottom: auto;">
         <div class="logo-icon">ST</div>
-        <div class="logo-text">
-          <h1>Orchestra</h1>
-          <p>Enterprise Triage</p>
-        </div>
+        <div class="logo-text"><h1>Orchestra</h1><p>Enterprise Triage</p></div>
       </a>
       <div style="margin-top:auto;">
         <h1>Secure.<br>Deterministic.<br>Limitless.</h1>
@@ -193,7 +207,6 @@ PAGE_AUTH = r'''<!DOCTYPE html>
     <div class="auth-box">
       <div class="auth-title">Sign In to Orchestra</div>
       <div class="auth-subtitle">Welcome back! Please enter your details.</div>
-      
       <form action="/login_submit" method="POST">
         <div class="form-group">
           <label class="form-label">Email Address</label>
@@ -204,24 +217,14 @@ PAGE_AUTH = r'''<!DOCTYPE html>
           <input type="password" name="password" class="form-input" placeholder="••••••••" required>
         </div>
         <div class="form-options">
-          <label class="checkbox-wrap">
-            <input type="checkbox" checked> Remember me
-          </label>
+          <label class="checkbox-wrap"><input type="checkbox" checked> Remember me</label>
           <a href="#" class="forgot-link">Forgot password?</a>
         </div>
         <button type="submit" class="btn-submit">Sign In</button>
       </form>
-      
       <div class="divider">or continue with</div>
-      
-      <a href="/google_login" class="btn-oauth">
-        ''' + GOOGLE_SVG + r'''
-        Google
-      </a>
-      
-      <div class="auth-switch">
-        Don't have an account? <a href="#">Sign Up</a>
-      </div>
+      <a href="/google_login" class="btn-oauth">''' + GOOGLE_SVG + r''' Google</a>
+      <div class="auth-switch">Don't have an account? <a href="#">Sign Up</a></div>
     </div>
   </div>
 </div>
@@ -235,6 +238,7 @@ PAGE_DASHBOARD = r'''<!DOCTYPE html>
 <title>Dashboard | Orchestra Triage</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/globals.css') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.js"></script>
 </head>
 <body>
 <div class="bg-scene"><div class="bg-orb o1"></div><div class="bg-orb o2"></div><div class="bg-orb o3"></div></div>
@@ -244,10 +248,7 @@ PAGE_DASHBOARD = r'''<!DOCTYPE html>
 <header class="header">
   <a href="/" class="logo">
     <div class="logo-icon">ST</div>
-    <div class="logo-text">
-      <h1>Orchestra Triage</h1>
-      <p>Secure Enterprise Session</p>
-    </div>
+    <div class="logo-text"><h1>Orchestra Triage</h1><p>Secure Enterprise Session</p></div>
   </a>
   <div style="display:flex;align-items:center;gap:16px;">
     <div style="text-align:right;">
@@ -260,11 +261,11 @@ PAGE_DASHBOARD = r'''<!DOCTYPE html>
 
 <div class="container" style="max-width:1440px;">
   <div class="dashboard-header">
-    <div class="dashboard-title">Live Performance Overview</div>
+    <div class="dashboard-title">Live Performance Overview (WebSocket Stream)</div>
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="val v-glow" id="sChunks">--</div><div class="lbl">Corpus Chunks</div></div>
+    <div class="stat"><div class="val v-glow" id="sChunks">{{ chunks }}</div><div class="lbl">Corpus Chunks</div></div>
     <div class="stat"><div class="val v-cyan" id="sTotal">--</div><div class="lbl">Total Tickets</div></div>
     <div class="stat"><div class="val v-green" id="sReplied">0</div><div class="lbl">Replied</div></div>
     <div class="stat"><div class="val v-red" id="sEscalated">0</div><div class="lbl">Escalated</div></div>
@@ -272,7 +273,7 @@ PAGE_DASHBOARD = r'''<!DOCTYPE html>
   </div>
 
   <div class="control-bar">
-    <button class="btn-dashboard btn-run" id="runBtn" onclick="runBatch()">Run All Tickets</button>
+    <button class="btn-dashboard btn-run" id="runBtn" onclick="runBatch('full')">Run All Tickets</button>
     <button class="btn-dashboard btn-sample" id="sampleBtn" onclick="runBatch('sample')">Sample Run</button>
     <div class="progress-wrap">
       <div class="progress-top">
@@ -287,12 +288,12 @@ PAGE_DASHBOARD = r'''<!DOCTYPE html>
     <div class="table-wrap">
       <div class="table-scroll">
         <table>
-          <thead><tr><th>#</th><th>Company</th><th>Subject</th><th>Status</th><th>Type</th><th>Area</th><th>Response</th></tr></thead>
+          <thead><tr><th>#</th><th>Conf.</th><th>Company</th><th>Status</th><th>Type</th><th>Audit Flags</th><th>Response</th></tr></thead>
           <tbody id="tbody"></tbody>
         </table>
       </div>
       <div id="emptyState" style="text-align:center;padding:100px 20px;color:var(--muted);font-size:15px;font-weight:500;">
-        Click <strong>Run All Tickets</strong> to initialize the engine.
+        Click <strong>Run All Tickets</strong> to initialize the WebSocket engine.
       </div>
     </div>
     <div class="log-panel">
@@ -306,64 +307,83 @@ PAGE_DASHBOARD = r'''<!DOCTYPE html>
 </div>
 
 <script>
-let polling=null;
-function runBatch(mode){
-  document.getElementById('runBtn').disabled=true;
-  document.getElementById('sampleBtn').disabled=true;
-  fetch(mode==='sample'?'/api/run?mode=sample':'/api/run',{method:'POST'})
-    .then(r=>r.json()).then(d=>{if(d.error){alert(d.error);reenable();return;}startPoll();})
-    .catch(e=>{alert('Error: '+e);reenable();});
+const socket = io();
+let processedData = [];
+
+socket.on('connect', () => {
+  console.log('Connected to WebSocket server');
+});
+
+socket.on('batch_start', (data) => {
+  document.getElementById('runBtn').disabled = true;
+  document.getElementById('sampleBtn').disabled = true;
+  document.getElementById('sTotal').textContent = data.total;
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('tbody').innerHTML = '';
+  processedData = [];
+});
+
+socket.on('ticket_done', (data) => {
+  const r = data.ticket;
+  processedData.push(r);
+  
+  // Update progress
+  const pct = Math.round((data.progress / data.total) * 100);
+  document.getElementById('progBar').style.width = pct + '%';
+  document.getElementById('progPct').textContent = pct + '%';
+  document.getElementById('progLabel').textContent = `Processing ${data.progress} of ${data.total}...`;
+  
+  // Update stats
+  document.getElementById('sReplied').textContent = processedData.filter(x=>x.status==='replied').length;
+  document.getElementById('sEscalated').textContent = processedData.filter(x=>x.status==='escalated').length;
+  document.getElementById('sInvalid').textContent = processedData.filter(x=>x.request_type==='invalid').length;
+  
+  // Render row
+  const flagsHtml = (r.audit_flags || []).map(f => `<span style="display:inline-block;padding:2px 6px;margin:2px;background:rgba(139,92,246,0.2);color:#c4b5fd;font-size:9px;border-radius:4px;border:1px solid rgba(139,92,246,0.4);">${f}</span>`).join('');
+  const confColor = r.confidence > 0.8 ? 'var(--green)' : (r.confidence > 0.5 ? 'var(--amber)' : 'var(--red)');
+  
+  const row = `<tr>
+    <td style="color:var(--muted)">${r._id}</td>
+    <td><strong style="color:${confColor}">${Math.round(r.confidence * 100)}%</strong></td>
+    <td><strong>${esc(r._company||'')}</strong></td>
+    <td><span class="pill pill-${r.status}">${r.status}</span></td>
+    <td><span class="pill pill-${r.request_type}">${r.request_type}</span></td>
+    <td>${flagsHtml}</td>
+    <td class="resp" title="${esc(r.justification)}">${esc((r.response||'').substring(0,100))}</td>
+  </tr>`;
+  
+  document.getElementById('tbody').insertAdjacentHTML('beforeend', row);
+});
+
+socket.on('log_update', (data) => {
+  const lb = document.getElementById('logBox');
+  let cls='log-line';
+  const l = data.message;
+  if(l.includes('[ERROR]'))cls+=' err';else if(l.includes('[DONE]'))cls+=' ok';else if(l.includes('[WARN]'))cls+=' warn';
+  lb.insertAdjacentHTML('beforeend', `<div class="${cls}">${esc(l)}</div>`);
+  lb.scrollTop = lb.scrollHeight;
+});
+
+socket.on('batch_done', () => {
+  document.getElementById('progLabel').textContent = `Done (${processedData.length} tickets completed)`;
+  document.getElementById('runBtn').disabled = false;
+  document.getElementById('sampleBtn').disabled = false;
+});
+
+socket.on('batch_error', (data) => {
+  alert('Error processing batch: ' + data.error);
+  document.getElementById('runBtn').disabled = false;
+  document.getElementById('sampleBtn').disabled = false;
+});
+
+function runBatch(mode) {
+  fetch(mode === 'sample' ? '/api/run?mode=sample' : '/api/run', {method:'POST'})
+    .then(r => r.json())
+    .then(d => { if(d.error) alert(d.error); })
+    .catch(e => alert('Error: '+e));
 }
-function reenable(){document.getElementById('runBtn').disabled=false;document.getElementById('sampleBtn').disabled=false;}
-function startPoll(){
-  if(polling)clearInterval(polling);
-  polling=setInterval(fetchStatus,1200);
-}
-function fetchStatus(){
-  fetch('/api/status').then(r=>r.json()).then(d=>{
-    document.getElementById('sChunks').textContent=d.corpus_chunks;
-    const res=d.results||[];
-    document.getElementById('sTotal').textContent=d.total||res.length||'--';
-    document.getElementById('sReplied').textContent=res.filter(r=>r.status==='replied').length;
-    document.getElementById('sEscalated').textContent=res.filter(r=>r.status==='escalated').length;
-    document.getElementById('sInvalid').textContent=res.filter(r=>r.request_type==='invalid').length;
-    const pct=d.total?Math.round(d.progress/d.total*100):0;
-    document.getElementById('progBar').style.width=pct+'%';
-    document.getElementById('progPct').textContent=pct+'%';
-    const label=document.getElementById('progLabel');
-    if(d.processing){
-      label.textContent=`Processing ${d.progress} of ${d.total}...`;
-    }else if(res.length>0){
-      label.textContent=`Done (${res.length} tickets completed)`;
-      clearInterval(polling);polling=null;reenable();
-    }else{
-      label.textContent='Ready to process';
-    }
-    const tbody=document.getElementById('tbody');
-    const empty=document.getElementById('emptyState');
-    if(res.length>0){
-      empty.style.display='none';
-      tbody.innerHTML=res.map((r,i)=>`<tr>
-        <td style="color:var(--muted)">${i+1}</td>
-        <td><strong>${esc(r._company||'')}</strong></td>
-        <td>${esc((r._subject||'').substring(0,35))}</td>
-        <td><span class="pill pill-${r.status}">${r.status}</span></td>
-        <td><span class="pill pill-${r.request_type}">${r.request_type}</span></td>
-        <td style="color:var(--muted);font-size:12px">${esc(r.product_area||'')}</td>
-        <td class="resp">${esc((r.response||'').substring(0,100))}</td>
-      </tr>`).join('');
-    }
-    const lb=document.getElementById('logBox');
-    lb.innerHTML=(d.log||[]).map(l=>{
-      let cls='log-line';
-      if(l.includes('[ERROR]'))cls+=' err';else if(l.includes('[DONE]'))cls+=' ok';else if(l.includes('[WARN]'))cls+=' warn';
-      return '<div class="'+cls+'">'+esc(l)+'</div>';
-    }).join('');
-    lb.scrollTop=lb.scrollHeight;
-  });
-}
+
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
-fetchStatus();setInterval(()=>{if(!polling)fetchStatus();},5000);
 </script>
 </body>
 </html>'''
@@ -383,7 +403,6 @@ def login_page():
 @app.route('/login_submit', methods=['POST'])
 def login_submit():
     email = flask_request.form.get('email', 'admin@orchestra.com')
-    # Standard dummy login for hackathon completeness
     session['user'] = {'name': email.split('@')[0].capitalize(), 'email': email}
     return redirect('/dashboard')
 
@@ -403,7 +422,6 @@ def auth():
         user_info = google.parse_id_token(token, nonce=None)
         session['user'] = user_info
     except Exception as e:
-        print("OAuth Error:", e)
         session['user'] = {'name': 'Authenticated User', 'email': 'demo@orchestra.com'}
     return redirect('/dashboard')
 
@@ -414,29 +432,21 @@ def logout():
 
 @app.route('/dashboard')
 def dashboard():
-    if 'user' not in session:
-        return redirect('/login')
-    return render_template_string(PAGE_DASHBOARD, session=session)
-
-@app.route('/api/status')
-def api_status():
-    if 'user' not in session: return jsonify({"error": "Unauthorized"}), 401
-    return jsonify({
-        "corpus_loaded":state["corpus_loaded"],"corpus_chunks":state["corpus_chunks"],
-        "processing":state["processing"],"progress":state["progress"],
-        "total":state["total"],"results":state["results"],
-        "log":state["log"][-80:],"has_key":(LLM_PROVIDER != "none"),"error":state["error"],
-    })
+    if 'user' not in session: return redirect('/login')
+    return render_template_string(PAGE_DASHBOARD, session=session, chunks=state["corpus_chunks"])
 
 @app.route('/api/run', methods=['POST'])
 def api_run():
     if 'user' not in session: return jsonify({"error": "Unauthorized"}), 401
     if state["processing"]: return jsonify({"error":"Already processing"}),409
     if not state["agent"]: return jsonify({"error":"No API key set. Please configure GEMINI_API_KEY and restart."}),400
+    
     mode = flask_request.args.get('mode','full')
     path = str(Path(TICKETS_DIR)/"sample_support_tickets.csv") if mode=='sample' else str(INPUT_CSV)
     if not os.path.exists(path): return jsonify({"error":f"Not found: {path}"}),404
+    
     tickets = load_csv(path)
+    # Start thread with socket context
     threading.Thread(target=run_batch, args=(tickets,), daemon=True).start()
     return jsonify({"started":True,"total":len(tickets)})
 
@@ -444,4 +454,5 @@ if __name__=='__main__':
     print("Initializing agent...")
     init_agent()
     print(f"\n  Orchestra Web Server: http://localhost:5000\n")
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Feature #5: WebSockets Runner
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
