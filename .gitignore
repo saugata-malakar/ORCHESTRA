@@ -1,0 +1,40 @@
+# Environment & secrets
+.env
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+.venv/
+venv/
+env/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Log file (lives outside repo per AGENTS.md §2)
+log.txt
+
+# Output (generated at runtime — DO commit if you want to submit)
+# support_tickets/output.csv
+
+# Misc
+*.bak
+*.tmp

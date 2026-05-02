@@ -1,0 +1,13 @@
+# Support Triage Agent - Dependencies
+# Python >= 3.11 required
+
+# LLM Providers (use one or both)
+google-generativeai>=0.8.0   # Gemini FREE tier
+anthropic>=0.30.0            # Claude (paid)
+
+# Retrieval
+rank-bm25>=0.2.2
+
+# Utilities
+python-dotenv>=1.0.0
+flask>=2.3.0
