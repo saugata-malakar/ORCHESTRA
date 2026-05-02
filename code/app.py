@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-app.py - Premium 3D Web Dashboard + Google Auth for the Support Triage Agent.
-Run: python app.py
-Then open http://localhost:5000
+app.py - Premium Commercial Web Dashboard + Google Auth for the Support Triage Agent.
 """
 import sys, io, os, csv, json, time, random, threading
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
@@ -98,63 +96,15 @@ def run_batch(tickets):
 # =======================
 # HTML TEMPLATES (UI/UX)
 # =======================
-HEAD_STYLES = r'''
-<style>
-:root{--bg:#05060f;--surface:#0c0d1a;--card:#111227;--border:#1c1d3a;--glow:#7c3aed;--cyan:#06b6d4;--pink:#ec4899;--green:#10b981;--red:#ef4444;--amber:#f59e0b;--text:#e2e8f0;--muted:#64748b;--font:'Outfit',sans-serif;}
-*{margin:0;padding:0;box-sizing:border-box;}
-html{scroll-behavior:smooth;}
-body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
-.bg-scene{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;}
-.bg-orb{position:absolute;border-radius:50%;filter:blur(80px);opacity:.15;animation:orbFloat 20s ease-in-out infinite;}
-.bg-orb.o1{width:600px;height:600px;background:var(--glow);top:-10%;left:-10%;animation-delay:0s;}
-.bg-orb.o2{width:500px;height:500px;background:var(--cyan);bottom:-10%;right:-10%;animation-delay:-7s;}
-.bg-orb.o3{width:400px;height:400px;background:var(--pink);top:40%;left:50%;animation-delay:-14s;}
-@keyframes orbFloat{0%,100%{transform:translate(0,0) scale(1);}25%{transform:translate(60px,-40px) scale(1.1);}50%{transform:translate(-30px,50px) scale(.9);}75%{transform:translate(40px,20px) scale(1.05);}}
-.grid-bg{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(124,58,237,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(124,58,237,.04) 1px,transparent 1px);background-size:60px 60px;pointer-events:none;}
-.wrapper{position:relative;z-index:1;}
-.header{padding:28px 40px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);backdrop-filter:blur(20px);background:rgba(5,6,15,.7);position:sticky;top:0;z-index:100;}
-.logo{display:flex;align-items:center;gap:14px;text-decoration:none;}
-.logo-icon{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,var(--glow),var(--cyan));display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;box-shadow:0 0 30px rgba(124,58,237,.4);transform:perspective(400px) rotateY(-8deg);transition:transform .4s;}
-.logo-icon:hover{transform:perspective(400px) rotateY(8deg) scale(1.05);}
-.logo-text h1{font-size:22px;font-weight:800;background:linear-gradient(135deg,#fff 0%,var(--cyan) 50%,var(--glow) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
-.logo-text p{font-size:11px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;}
-.container{max-width:1440px;margin:0 auto;padding:32px 40px;}
-.footer{text-align:center;padding:28px;border-top:1px solid var(--border);font-size:12px;color:var(--muted);margin-top:20px;}
-</style>
-'''
+GOOGLE_SVG = '''<svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>'''
 
 PAGE_LANDING = r'''<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Orchestra | AI Support Triage Agent</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-''' + HEAD_STYLES + r'''
-<style>
-.hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:80px 20px;margin-bottom:40px;}
-.hero-badge{padding:8px 20px;background:rgba(6,182,212,.1);border:1px solid rgba(6,182,212,.3);color:var(--cyan);border-radius:30px;font-size:12px;font-weight:700;letter-spacing:2px;margin-bottom:24px;text-transform:uppercase;animation:pulse 2s infinite;}
-.hero h1{font-size:64px;font-weight:900;line-height:1.1;margin-bottom:24px;background:linear-gradient(135deg,#ffffff 20%,var(--cyan) 70%,var(--glow));-webkit-background-clip:text;-webkit-text-fill-color:transparent;text-shadow:0 10px 30px rgba(124,58,237,.2);}
-.hero p{font-size:20px;color:var(--muted);max-width:800px;line-height:1.6;margin-bottom:48px;}
-.btn-google{display:inline-flex;align-items:center;gap:12px;padding:16px 36px;background:#ffffff;color:#000;border-radius:12px;font-size:16px;font-weight:800;text-decoration:none;transition:all .3s;box-shadow:0 15px 35px rgba(255,255,255,.1);text-transform:uppercase;letter-spacing:1px;}
-.btn-google:hover{transform:translateY(-4px);box-shadow:0 20px 45px rgba(255,255,255,.2);}
-.btn-google img{width:24px;}
-.info-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-bottom:60px;}
-.info-card{background:rgba(17,18,39,.6);backdrop-filter:blur(10px);border:1px solid var(--border);border-radius:24px;padding:40px;transform:perspective(1000px) rotateX(2deg);transition:all .4s ease-out;}
-.info-card:hover{transform:perspective(1000px) rotateX(0deg) translateY(-8px);border-color:var(--cyan);box-shadow:0 20px 40px rgba(6,182,212,.1);}
-.info-card .icon{font-size:32px;margin-bottom:20px;display:inline-block;padding:16px;background:rgba(124,58,237,.1);border-radius:16px;color:var(--glow);}
-.info-card h3{font-size:20px;font-weight:800;color:#fff;margin-bottom:12px;}
-.info-card p{font-size:15px;color:var(--muted);line-height:1.7;}
-.architecture{background:var(--card);border:1px solid var(--border);border-radius:24px;padding:60px;margin-bottom:60px;display:flex;gap:40px;align-items:center;}
-.arch-text{flex:1;}
-.arch-text h2{font-size:32px;font-weight:900;color:#fff;margin-bottom:20px;}
-.arch-text p{font-size:16px;color:var(--muted);line-height:1.8;margin-bottom:20px;}
-.arch-text ul{list-style:none;padding:0;}
-.arch-text li{display:flex;align-items:center;gap:12px;font-size:15px;color:#fff;margin-bottom:12px;background:rgba(255,255,255,.03);padding:12px 20px;border-radius:12px;border:1px solid rgba(255,255,255,.05);}
-.arch-text li::before{content:'✓';color:var(--green);font-weight:900;}
-.arch-img{flex:1;background:linear-gradient(135deg,rgba(124,58,237,.1),rgba(6,182,212,.1));border:1px solid var(--border);height:400px;border-radius:24px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;}
-.arch-img::after{content:'Serverless Architecture';position:absolute;font-size:24px;font-weight:900;color:var(--cyan);letter-spacing:4px;text-transform:uppercase;opacity:0.5;}
-@media(max-width:1000px){.info-grid{grid-template-columns:1fr;}.architecture{flex-direction:column;}.hero h1{font-size:48px;}}
-</style>
+<title>Orchestra | Premium Support Triage</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/globals.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">
 </head>
 <body>
 <div class="bg-scene"><div class="bg-orb o1"></div><div class="bg-orb o2"></div><div class="bg-orb o3"></div></div>
@@ -166,55 +116,51 @@ PAGE_LANDING = r'''<!DOCTYPE html>
     <div class="logo-icon">ST</div>
     <div class="logo-text">
       <h1>Orchestra</h1>
-      <p>Multi-Domain Triage Engine</p>
+      <p>Commercial Triage Engine</p>
     </div>
   </a>
-  <a href="/login" class="btn-google" style="padding:10px 20px;font-size:12px;"><img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="G"> Sign In</a>
+  <a href="/login" class="btn-glass">''' + GOOGLE_SVG + r''' Sign In</a>
 </header>
 
 <div class="container">
   <div class="hero">
-    <div class="hero-badge">HackerRank Orchestrate 2026</div>
-    <h1>The Ultimate Multi-Domain<br>Support Triage Agent</h1>
+    <div class="hero-badge">Orchestrate Hackathon 2026</div>
+    <h1>The Ultimate Multi-Domain<br><span class="gradient-text">Support Triage Agent</span></h1>
     <p>Seamlessly process, categorize, and resolve support tickets across HackerRank, Claude, and Visa with our proprietary Min-Max design architecture. Built to scale infinitely across devices on Vercel Edge Networks.</p>
-    <a href="/login" class="btn-google"><img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="G"> Continue with Google</a>
+    <a href="/login" class="btn-primary">''' + GOOGLE_SVG + r''' Continue with Google</a>
   </div>
 
-  <div class="info-grid">
-    <div class="info-card">
-      <div class="icon">🚀</div>
-      <h3>Infinite Load Balancing</h3>
-      <p>By leveraging stateless cookie sessions and a Vercel serverless backend, this agent seamlessly handles load across multiple devices globally without breaking a sweat.</p>
+  <div class="bento-grid">
+    <div class="bento-item bento-large">
+      <div class="bento-icon">🧠</div>
+      <div class="bento-title">Gemini Deterministic RAG</div>
+      <div class="bento-desc">Harnessing the power of Google Gemini Free Tier, combined with a high-performance offline BM25 index. We guarantee exact 0.0 temperature reproducibility across enterprise ticket triage.</div>
     </div>
-    <div class="info-card">
-      <div class="icon">🧠</div>
-      <h3>Gemini Deterministic RAG</h3>
-      <p>Harnessing the power of Google Gemini Free Tier, combined with an offline BM25 index, guaranteeing exact 0.0 temperature reproducibility across ticket triage.</p>
+    <div class="bento-item">
+      <div class="bento-icon">🚀</div>
+      <div class="bento-title">Infinite Load Balancing</div>
+      <div class="bento-desc">By leveraging stateless cookie sessions and a Vercel serverless backend, this agent effortlessly handles high-concurrency traffic globally.</div>
     </div>
-    <div class="info-card">
-      <div class="icon">🛡️</div>
-      <h3>3-Layer Advanced Safety</h3>
-      <p>Detects prompt injections, legal threats, fraud attempts, and out-of-scope issues before the LLM even sees the request, maximizing security and minimizing API costs.</p>
+    <div class="bento-item">
+      <div class="bento-icon">🛡️</div>
+      <div class="bento-title">3-Layer Advanced Safety</div>
+      <div class="bento-desc">Detects prompt injections, legal threats, fraud attempts, and out-of-scope issues before the LLM evaluates the request, saving crucial API costs.</div>
     </div>
-  </div>
-
-  <div class="architecture">
-    <div class="arch-text">
-      <h2>Min-Max Design Pattern</h2>
-      <p>This platform employs a highly optimized Min-Max architectural strategy, specifically engineered to deliver a top-notch UI/UX while keeping backend costs at zero.</p>
-      <ul>
-        <li>Minimize latency by bypassing traditional Vector DBs.</li>
-        <li>Maximize UX with 3D glassmorphism and real-time logs.</li>
-        <li>Dynamic Google OAuth for secure enterprise access.</li>
-        <li>Serverless Edge readiness out of the box.</li>
-      </ul>
-    </div>
-    <div class="arch-img"></div>
   </div>
 </div>
 
-<div class="footer">HackerRank Orchestrate Hackathon 2026 &mdash; Built with Google Gemini &mdash; Saugata Malakar</div>
+<div class="footer">Orchestra Hackathon Project 2026 &mdash; Built with Google Gemini &mdash; Saugata Malakar</div>
 </div>
+<script>
+  // Magnet effect for bento items
+  document.querySelectorAll('.bento-item').forEach(item => {
+    item.addEventListener('mousemove', e => {
+      const rect = item.getBoundingClientRect();
+      item.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
+      item.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+    });
+  });
+</script>
 </body>
 </html>'''
 
@@ -223,78 +169,8 @@ PAGE_DASHBOARD = r'''<!DOCTYPE html>
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Dashboard | Orchestra Triage</title>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-''' + HEAD_STYLES + r'''
-<style>
-/* Dashboard specific styles */
-.header-badge{padding:6px 16px;border-radius:20px;font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;border:1px solid var(--border);color:var(--muted);backdrop-filter:blur(10px);}
-.header-badge.live{border-color:var(--green);color:var(--green);animation:pulse 2s infinite;}
-@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,.3);}50%{box-shadow:0 0 0 8px rgba(16,185,129,0);}}
-.section-title{font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:4px;color:var(--text);margin-bottom:24px;display:flex;align-items:center;gap:12px;text-shadow: 0 0 10px rgba(255,255,255,0.1);}
-.section-title::before{content:'';width:30px;height:3px;background:linear-gradient(90deg,var(--glow),var(--cyan));border-radius:2px;box-shadow: 0 0 10px var(--glow);}
-.stats{display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:36px;}
-.stat{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center;transform:perspective(800px) rotateX(2deg);transition:all .4s cubic-bezier(.4,0,.2,1);position:relative;overflow:hidden;}
-.stat::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,transparent 40%,rgba(124,58,237,.05) 100%);pointer-events:none;}
-.stat:hover{transform:perspective(800px) rotateX(-2deg) translateY(-4px);border-color:var(--glow);box-shadow:0 20px 40px rgba(124,58,237,.15),0 0 1px var(--glow);}
-.stat .val{font-size:36px;font-weight:900;line-height:1;margin-bottom:6px;}
-.stat .val.v-glow{background:linear-gradient(135deg,var(--cyan),var(--glow));-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
-.stat .val.v-green{color:var(--green);}
-.stat .val.v-red{color:var(--red);}
-.stat .val.v-amber{color:var(--amber);}
-.stat .val.v-cyan{color:var(--cyan);}
-.stat .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:2px;font-weight:600;}
-.control-bar{display:flex;align-items:center;gap:16px;margin-bottom:28px;padding:20px 24px;background:var(--card);border:1px solid var(--border);border-radius:16px;backdrop-filter:blur(10px);}
-.btn{padding:12px 28px;border:none;border-radius:10px;font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer;transition:all .3s;text-transform:uppercase;letter-spacing:1px;}
-.btn-run{background:linear-gradient(135deg,var(--glow),var(--cyan));color:#fff;box-shadow:0 4px 20px rgba(124,58,237,.3);}
-.btn-run:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 30px rgba(124,58,237,.5);}
-.btn-run:disabled{opacity:.35;cursor:not-allowed;transform:none;}
-.btn-sample{background:var(--surface);color:var(--text);border:1px solid var(--border);}
-.btn-sample:hover:not(:disabled){border-color:var(--cyan);box-shadow:0 0 20px rgba(6,182,212,.1);}
-.progress-wrap{flex:1;display:flex;flex-direction:column;gap:6px;}
-.progress-top{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);}
-.progress-track{height:6px;background:var(--surface);border-radius:3px;overflow:hidden;}
-.progress-bar{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--glow),var(--cyan));transition:width .6s cubic-bezier(.4,0,.2,1);box-shadow:0 0 12px rgba(124,58,237,.4);}
-.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px;}
-.status-dot.idle{background:var(--muted);}
-.status-dot.running{background:var(--amber);animation:blink 1s infinite;}
-.status-dot.done{background:var(--green);}
-.panels{display:grid;grid-template-columns:1fr 340px;gap:20px;margin-bottom:32px;}
-.table-wrap{background:var(--card);border:1px solid var(--border);border-radius:16px;overflow:hidden;transform:perspective(1200px) rotateY(-1deg);transition:transform .4s;}
-.table-wrap:hover{transform:perspective(1200px) rotateY(0deg);}
-.table-scroll{max-height:520px;overflow-y:auto;}
-.table-scroll::-webkit-scrollbar{width:6px;}
-.table-scroll::-webkit-scrollbar-track{background:var(--surface);}
-.table-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px;}
-table{width:100%;border-collapse:collapse;}
-th{text-align:left;padding:14px 16px;background:var(--surface);color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:2px;font-weight:700;position:sticky;top:0;z-index:2;}
-td{padding:12px 16px;border-bottom:1px solid rgba(28,29,58,.5);font-size:13px;vertical-align:top;}
-tr:hover td{background:rgba(124,58,237,.03);}
-.pill{display:inline-block;padding:3px 12px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.5px;}
-.pill-replied{background:rgba(6,182,212,.12);color:var(--cyan);}
-.pill-escalated{background:rgba(239,68,68,.12);color:var(--red);}
-.pill-product_issue{background:rgba(245,158,11,.1);color:var(--amber);}
-.pill-bug{background:rgba(239,68,68,.1);color:var(--red);}
-.pill-invalid{background:rgba(100,116,139,.15);color:var(--muted);}
-.pill-feature_request{background:rgba(16,185,129,.1);color:var(--green);}
-.resp{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;transition:all .3s;}
-.resp:hover{white-space:normal;word-break:break-word;background:var(--surface);padding:8px;border-radius:8px;max-width:500px;}
-.log-panel{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;display:flex;flex-direction:column;transform:perspective(1200px) rotateY(1deg);transition:transform .4s;}
-.log-panel:hover{transform:perspective(1200px) rotateY(0deg);}
-.log-title{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;}
-.log-box{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:14px;overflow-y:auto;max-height:460px;font-family:'Courier New',monospace;font-size:11px;line-height:2;}
-.log-box::-webkit-scrollbar{width:4px;}
-.log-box::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px;}
-.log-line{color:var(--muted);}
-.log-line.err{color:var(--red);}
-.log-line.ok{color:var(--green);}
-.log-line.warn{color:var(--amber);}
-.user-profile{display:flex;align-items:center;gap:12px;}
-.user-profile img{width:32px;height:32px;border-radius:50%;border:2px solid var(--glow);}
-.logout-btn{color:var(--muted);font-size:12px;font-weight:700;text-decoration:none;text-transform:uppercase;letter-spacing:1px;transition:color .3s;}
-.logout-btn:hover{color:var(--red);}
-@media(max-width:1100px){.panels{grid-template-columns:1fr;}.stats{grid-template-columns:repeat(3,1fr);}}
-@media(max-width:700px){.stats{grid-template-columns:repeat(2,1fr);}}
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/globals.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 <body>
 <div class="bg-scene"><div class="bg-orb o1"></div><div class="bg-orb o2"></div><div class="bg-orb o3"></div></div>
@@ -309,17 +185,20 @@ tr:hover td{background:rgba(124,58,237,.03);}
       <p>Secure Enterprise Session</p>
     </div>
   </a>
-  <div class="user-profile">
+  <div style="display:flex;align-items:center;gap:16px;">
     <div style="text-align:right;">
-      <div style="font-size:13px;font-weight:700;color:#fff;">{{ session.get('user', {}).get('name', 'Admin User') }}</div>
-      <a href="/logout" class="logout-btn">Sign Out</a>
+      <div style="font-size:14px;font-weight:800;color:#fff;">{{ session.get('user', {}).get('name', 'Admin User') }}</div>
+      <a href="/logout" style="color:var(--red);font-size:12px;font-weight:700;text-decoration:none;text-transform:uppercase;letter-spacing:1px;">Sign Out</a>
     </div>
-    <img src="{{ session.get('user', {}).get('picture', 'https://api.dicebear.com/7.x/avataaars/svg?seed=admin') }}" alt="Profile">
+    <img src="{{ session.get('user', {}).get('picture', 'https://api.dicebear.com/7.x/avataaars/svg?seed=admin') }}" alt="Profile" style="width:40px;height:40px;border-radius:50%;border:2px solid var(--cyan);">
   </div>
 </header>
 
-<div class="container">
-  <div class="section-title">Performance Overview</div>
+<div class="container" style="max-width:1440px;">
+  <div class="dashboard-header">
+    <div class="dashboard-title">Live Performance Overview</div>
+  </div>
+
   <div class="stats">
     <div class="stat"><div class="val v-glow" id="sChunks">--</div><div class="lbl">Corpus Chunks</div></div>
     <div class="stat"><div class="val v-cyan" id="sTotal">--</div><div class="lbl">Total Tickets</div></div>
@@ -329,18 +208,17 @@ tr:hover td{background:rgba(124,58,237,.03);}
   </div>
 
   <div class="control-bar">
-    <button class="btn btn-run" id="runBtn" onclick="runBatch()">Run All Tickets</button>
-    <button class="btn btn-sample" id="sampleBtn" onclick="runBatch('sample')">Sample Run</button>
+    <button class="btn-dashboard btn-run" id="runBtn" onclick="runBatch()">Run All Tickets</button>
+    <button class="btn-dashboard btn-sample" id="sampleBtn" onclick="runBatch('sample')">Sample Run</button>
     <div class="progress-wrap">
       <div class="progress-top">
-        <span id="progLabel"><span class="status-dot idle"></span>Ready</span>
+        <span id="progLabel">Ready to process</span>
         <span id="progPct">0%</span>
       </div>
       <div class="progress-track"><div class="progress-bar" id="progBar" style="width:0%"></div></div>
     </div>
   </div>
 
-  <div class="section-title">Triage Results &amp; Activity</div>
   <div class="panels">
     <div class="table-wrap">
       <div class="table-scroll">
@@ -349,18 +227,18 @@ tr:hover td{background:rgba(124,58,237,.03);}
           <tbody id="tbody"></tbody>
         </table>
       </div>
-      <div id="emptyState" style="text-align:center;padding:60px 20px;color:var(--muted);font-size:14px;">
-        Click <strong>Run All Tickets</strong> to start batch processing
+      <div id="emptyState" style="text-align:center;padding:100px 20px;color:var(--muted);font-size:15px;font-weight:500;">
+        Click <strong>Run All Tickets</strong> to initialize the engine.
       </div>
     </div>
     <div class="log-panel">
-      <div class="log-title">Live Agent Logs</div>
+      <div class="log-title">System Logs</div>
       <div class="log-box" id="logBox"></div>
     </div>
   </div>
 </div>
 
-<div class="footer">HackerRank Orchestrate Hackathon 2026 &mdash; Enterprise Global Deployment</div>
+<div class="footer">Orchestra Hackathon Project 2026 &mdash; Saugata Malakar</div>
 </div>
 
 <script>
@@ -390,12 +268,12 @@ function fetchStatus(){
     document.getElementById('progPct').textContent=pct+'%';
     const label=document.getElementById('progLabel');
     if(d.processing){
-      label.innerHTML='<span class="status-dot running"></span>'+d.progress+' / '+d.total;
+      label.textContent=`Processing ${d.progress} of ${d.total}...`;
     }else if(res.length>0){
-      label.innerHTML='<span class="status-dot done"></span>Done ('+res.length+' tickets)';
+      label.textContent=`Done (${res.length} tickets completed)`;
       clearInterval(polling);polling=null;reenable();
     }else{
-      label.innerHTML='<span class="status-dot idle"></span>Ready';
+      label.textContent='Ready to process';
     }
     const tbody=document.getElementById('tbody');
     const empty=document.getElementById('emptyState');
@@ -432,13 +310,11 @@ fetchStatus();setInterval(()=>{if(!polling)fetchStatus();},5000);
 
 @app.route('/')
 def index():
-    # If user is already logged in, show them the dashboard link, else the landing page.
     return render_template_string(PAGE_LANDING)
 
 @app.route('/login')
 def login():
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
-        # Fallback if no OAuth credentials set (for demo/hackathon purposes)
         session['user'] = {'name': 'Hackathon Judge', 'email': 'judge@orchestra.com'}
         return redirect('/dashboard')
     
@@ -465,7 +341,6 @@ def logout():
 def dashboard():
     if 'user' not in session:
         return redirect('/login')
-    # Render with Jinja2 syntax evaluation for the username
     return render_template_string(PAGE_DASHBOARD, session=session)
 
 @app.route('/api/status')
