@@ -1,15 +1,30 @@
 #!/usr/bin/env python3
 """
-app.py - Premium Web Dashboard with WebSockets & Audit Trails.
+app.py - Premium Web Dashboard with optional WebSockets & Audit Trails.
+Works on both Vercel (serverless, no WS) and localhost (full WS).
 """
 import sys, io, os, csv, json, time, random, threading
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+try:
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+except: pass
 random.seed(42)
 
 from flask import Flask, render_template_string, jsonify, request as flask_request, session, redirect, url_for
-from flask_socketio import SocketIO
-from authlib.integrations.flask_client import OAuth
+
+# SocketIO is optional — Vercel serverless doesn't support WebSockets
+try:
+    from flask_socketio import SocketIO
+    HAS_SOCKETIO = True
+except ImportError:
+    HAS_SOCKETIO = False
+
+try:
+    from authlib.integrations.flask_client import OAuth
+    HAS_OAUTH = True
+except ImportError:
+    HAS_OAUTH = False
+
 from config import (
     ANTHROPIC_API_KEY, GEMINI_API_KEY, LLM_PROVIDER, 
     INPUT_CSV, OUTPUT_CSV, TICKETS_DIR, 
@@ -23,22 +38,28 @@ from pathlib import Path
 app = Flask(__name__)
 app.secret_key = FLASK_SECRET_KEY
 
-# Feature #5: Streaming Live Dashboard with WebSockets
-socketio = SocketIO(app, cors_allowed_origins="*")
+# Feature #5: Streaming Live Dashboard with WebSockets (when available)
+if HAS_SOCKETIO:
+    socketio = SocketIO(app, cors_allowed_origins="*")
+else:
+    socketio = None
 
-oauth = OAuth(app)
-google = oauth.register(
-    name='google',
-    client_id=GOOGLE_CLIENT_ID,
-    client_secret=GOOGLE_CLIENT_SECRET,
-    access_token_url='https://accounts.google.com/o/oauth2/token',
-    access_token_params=None,
-    authorize_url='https://accounts.google.com/o/oauth2/auth',
-    authorize_params=None,
-    api_base_url='https://www.googleapis.com/oauth2/v1/',
-    userinfo_endpoint='https://openidconnect.googleapis.com/v1/userinfo',
-    client_kwargs={'scope': 'openid email profile'},
-)
+if HAS_OAUTH:
+    oauth = OAuth(app)
+    google = oauth.register(
+        name='google',
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        access_token_url='https://accounts.google.com/o/oauth2/token',
+        access_token_params=None,
+        authorize_url='https://accounts.google.com/o/oauth2/auth',
+        authorize_params=None,
+        api_base_url='https://www.googleapis.com/oauth2/v1/',
+        userinfo_endpoint='https://openidconnect.googleapis.com/v1/userinfo',
+        client_kwargs={'scope': 'openid email profile'},
+    )
+else:
+    google = None
 
 state = {
     "retriever": None, "agent": None, "corpus_loaded": False,
@@ -46,9 +67,14 @@ state = {
     "total": 0, "results": [], "log": [], "error": None,
 }
 
+def _emit(event, data):
+    if socketio:
+        try: socketio.emit(event, data)
+        except: pass
+
 def log(msg):
     state["log"].append(msg)
-    socketio.emit('log_update', {"message": msg})
+    _emit('log_update', {"message": msg})
 
 def init_agent():
     if state["corpus_loaded"]: return
@@ -82,7 +108,7 @@ def load_csv(path):
 
 def run_batch(tickets):
     state["processing"]=True; state["results"]=[]; state["progress"]=0; state["total"]=len(tickets); state["error"]=None
-    socketio.emit('batch_start', {"total": len(tickets)})
+    _emit('batch_start', {"total": len(tickets)})
     
     try:
         for i,t in enumerate(tickets):
@@ -102,7 +128,7 @@ def run_batch(tickets):
             state["progress"] = i + 1
             
             # Push instantly via WebSockets (Feature #5)
-            socketio.emit('ticket_done', {"ticket": r, "progress": i + 1, "total": len(tickets)})
+            _emit('ticket_done', {"ticket": r, "progress": i + 1, "total": len(tickets)})
             
         # Write output.csv
         out = str(OUTPUT_CSV)
@@ -117,12 +143,12 @@ def run_batch(tickets):
             json.dump(state["results"], f, indent=2)
             
         log(f"[DONE] output.csv and output_audit.json written ({len(state['results'])} rows)")
-        socketio.emit('batch_done')
+        _emit('batch_done', {})
     except Exception as e:
         err = f"[ERROR] {e}"
         log(err)
         state["error"]=str(e)
-        socketio.emit('batch_error', {"error": str(e)})
+        _emit('batch_error', {"error": str(e)})
     state["processing"]=False
 
 # =======================
@@ -450,9 +476,15 @@ def api_run():
     threading.Thread(target=run_batch, args=(tickets,), daemon=True).start()
     return jsonify({"started":True,"total":len(tickets)})
 
+@app.route('/api/status')
+def api_status():
+    return jsonify({"processing": state["processing"], "progress": state["progress"], "total": state["total"], "results": state["results"], "log": state["log"][-20:], "error": state["error"]})
+
 if __name__=='__main__':
     print("Initializing agent...")
     init_agent()
     print(f"\n  Orchestra Web Server: http://localhost:5000\n")
-    # Feature #5: WebSockets Runner
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+    if HAS_SOCKETIO and socketio:
+        socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True)
+    else:
+        app.run(host='0.0.0.0', port=5000, debug=False)
