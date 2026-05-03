@@ -84,7 +84,9 @@ class SupportTriageAgent:
         cosine_sim = cosine_similarity(tfidf_matrix[-1], tfidf_matrix[:-1]).flatten()
         
         max_idx = cosine_sim.argmax()
-        if cosine_sim[max_idx] > 0.85:
+        # Raised threshold to 0.98 because support tickets share too much boilerplate vocabulary,
+        # which was causing the agent to falsely flag everything as a duplicate!
+        if cosine_sim[max_idx] > 0.98:
             res = dict(self.history_results[max_idx])
             res["justification"] = f"Resolved as duplicate of a previous ticket. Original logic: {res['justification']}"
             res["confidence"] = round(float(cosine_sim[max_idx]), 2)
